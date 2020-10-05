@@ -1,8 +1,10 @@
 package wapal;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.NoSuchWindowException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -20,12 +22,16 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+// TODO: you may encounter the Fence at the first run, and it is completely useless
 public class App {
 
     static final By BY_BUTTON_BEGIN = By.xpath("//button[text()='BEGIN']");
     static final By BY_LINK_EPOCH_BEGINS = By.linkText("Tonight your epoch begins.");
 
     static final By BY_N_IMPREGNATIONS = By.xpath("/html/body/div[4]/div[2]/div/div[2]/thick/strong");
+
+    // name of the active tab
+    static final String ACTIVE_WINDOW_NAME = "IC_window";
 
     static final Logger logger = LogManager.getRootLogger();
 
@@ -56,8 +62,28 @@ public class App {
                     // start a new run
                     {
                         logger.info("Starting Incubus City from "+ic_path);
-                        // TODO: make sure page is reloaded always
+
+                        // NOTE: reloading the game does not restart it; Twine is too cachy for that
                         driver.get(ic_path);
+
+                        /*
+                        // open a new tab to run a season of IC in
+                        // TODO: fix org.openqa.selenium.NoSuchWindowException: Browsing context has been discarded
+                        try {
+                            // switch to leftover tab of the previous season
+                            driver.switchTo().window(ACTIVE_WINDOW_NAME);
+                            // and close it
+                            driver.close();
+                        } catch( NoSuchWindowException ignore ) {}
+                        
+                        // make sure page is reloaded on each iteration by opening in a new tab
+                        final String js_open_new_tab = "window.open('"+ic_path+"','"+ACTIVE_WINDOW_NAME+"');";
+                        ((JavascriptExecutor)driver).executeScript(js_open_new_tab);
+
+                        // switch to the new tab
+                        driver.switchTo().window(ACTIVE_WINDOW_NAME);
+                        */
+                        
             
                         logger.info("Waiting for SugarCube to finish loading...");
                         // wait until button is clickable
@@ -131,12 +157,17 @@ public class App {
                                 logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
                                 // no need to click the button
                                 // begin next iteration in while loop
-                                // reload the page
+                                curPage.restart( driver, wait );
                                 break;
                             } else {
                                 logger.error("Ran out of choices before season end for run {}", runAsString( curRun ));
                                 throw exn;
                             }
+                        } catch( RestartRequiredException exn ) {
+
+                            logger.warn("Restarting stalled run {}", runAsString( curRun ));
+                            curPage.restart( driver, wait );
+                            break;
                         }
 
                         // check if we returned to main page
@@ -147,6 +178,9 @@ public class App {
 
                         // check if the season has ended
                         if ( EndOfSeasonPage.page.isShown( driver, wait ) ) {
+
+                            curPage = EndOfSeasonPage.page;
+
                             // end the run
                             //final int nimpregs = Page.getImpregnations( wait );
                             runs.add( new Tuple<>( curRun, score ) );
@@ -154,21 +188,32 @@ public class App {
                             logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
                             // no need to click the button
                             // begin next iteration in while loop
-                            // reload the page
+                            curPage.restart( driver, wait );
                             break;
                         }
                     }
                 }
             } catch( IllegalArgumentException exn ) {
                 // End-of-life
-                System.err.println("Exhausted");
-                System.err.println(exn);
+                logger.error("Exhausted");
+                logger.error(exn);
             }
 
             
         } finally {
             driver.quit();
         }
+    }
+
+    /** If you encounter the Fence on a run,
+      * the iteration can get stuck after you run out of money.
+      * In this case a restart needs to be signaled.
+      */
+    static class RestartRequiredException extends Exception {
+        public RestartRequiredException( String reason ) {
+            super(reason);
+        }
+
     }
 
     
@@ -191,7 +236,7 @@ public class App {
             return choices.stream().collect(Collectors.joining("\n- ","- ",""));
         }
 
-        default Page selectChoice( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException {
+        default Page selectChoice( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException, RestartRequiredException {
             final List<WebElement> prevChoices = this.getChoices( driver, wait );
             // remember text to see if anything has changed
             final String prevChoicesText = listChoices( driver, wait );
@@ -206,7 +251,7 @@ public class App {
             // compare new stringified choices with previous stringified choices
             if ( this.listChoices( driver, wait ).equals( prevChoicesText ) ) {
                 // TODO: make this more useful in case it actually happens
-                throw new RuntimeException("Couldn't progress page");
+                throw new RestartRequiredException("Couldn't progress page");
             }
 
             // return some handle
@@ -217,6 +262,19 @@ public class App {
         default int getScore( WebDriverWait wait ) {
             final String nimpregs = wait.until(presenceOfElementLocated(BY_N_IMPREGNATIONS)).getText();
             return Integer.parseInt(nimpregs);
+        }
+
+        static final By BY_BUTTON_RESTART = By.xpath("/html/body/div[4]/div[2]/nav/ul/li[3]/a");
+
+        default void restart( WebDriver driver, WebDriverWait wait ) {
+            final WebElement buttonRestart = driver.findElement(BY_BUTTON_RESTART);
+            
+            if ( ! buttonRestart.getText().equals("Restart") ) {
+                logger.error("Restart button not found at xpath");
+                // proceed to click whatever we found anyway
+            }
+
+            buttonRestart.click();
         }
     }
 
@@ -260,7 +318,7 @@ public class App {
 
 
     /** Tuple class, because Java has none canonical. */
-    static class Tuple<A,B> {
+    public static class Tuple<A,B> {
         public final A fst;
         public final B snd;
         public Tuple( A a, B b ) { this.fst=a; this.snd=b; }
@@ -283,14 +341,14 @@ public class App {
      * It could be more efficient to calculate the expected run up until this point,
      * but I suppose we're spending much more time waiting on Selenium that iterating this list.
      */
-    static int chooseNextDFS( List<Tuple<Integer,Integer>> choices, int off ) throws IllegalArgumentException {
+    public static int chooseNextDFS( List<Tuple<Integer,Integer>> choices, int off ) throws IllegalArgumentException {
 
         // iterate backwards from the end
         for( int i = choices.size()-1; i > off; i-- ) {
             final Tuple<Integer,Integer> t_i = choices.get(i);
             // more options available at a later point
             if ( t_i.fst < t_i.snd-1 ) {
-                // repeat the choice made at point off to reach the later point
+                // repeat the choice made at point 'off' to reach the later point
                 return choices.get(off).fst;
             }
         }
@@ -299,16 +357,16 @@ public class App {
         final Tuple<Integer,Integer> t_off = choices.get(off);
         if ( t_off.fst < t_off.snd-1 ) {
             return choices.get(off).fst+1;
+        } else {
+            final String run_str = runAsString( choices );
+            throw new IllegalArgumentException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
         }
-
-        final String run_str = runAsString( choices );
-        throw new IllegalArgumentException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
     }
 
     static String runAsString( List<Tuple<Integer,Integer>> choices ) {
         return choices.stream()
             // abbreviate "1/1" to "-"
-            .map( e -> e.snd == 0 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
+            .map( e -> e.snd == 1 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
             .collect(Collectors.joining(", ","[","]"));
     }
 }
