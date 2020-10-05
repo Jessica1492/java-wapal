@@ -3,6 +3,7 @@ package wapal;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.firefox.FirefoxDriver;
@@ -49,9 +50,13 @@ public class App {
             try {
                 while( true ) {
 
+                    // store the score "globally" here, because the season-end page may not show it
+                    int score = 0;
+
                     // start a new run
                     {
                         logger.info("Starting Incubus City from "+ic_path);
+                        // TODO: make sure page is reloaded always
                         driver.get(ic_path);
             
                         logger.info("Waiting for SugarCube to finish loading...");
@@ -72,7 +77,7 @@ public class App {
 
                         // insert a dummy run
                         if ( runs.isEmpty() ) {
-                            runs.add( new Tuple<>( Collections.singletonList( new Tuple<>(-1, nlocations ) ), 0 ) );
+                            runs.add( new Tuple<>( Collections.singletonList( new Tuple<>(-1, nlocations ) ), score ) );
                         }
                     }
 
@@ -86,12 +91,14 @@ public class App {
                     for( int choiceIndex = 0; true; choiceIndex++ ) {
                         // analyze current page
                         final int noptions = curPage.getChoices(driver,wait).size();
+                        score = curPage.getScore( wait );
 
                         // make a choice at current point
                         final int choice;
                         if ( choiceIndex < prevRun.size() ) {
+                            // point has been visited before
                             // choose like in the previous run,
-                            // unless all choices have been exhausted to a certain point
+                            // unless all later choices have been exhausted
                             choice = chooseNextDFS( prevRun, choiceIndex );
                         } else {
                             // enter new territory
@@ -104,7 +111,33 @@ public class App {
                         
                         // perform the action
                         // wait for the next page to open
-                        curPage = curPage.selectChoice( driver, wait, choice );
+                        try {
+                            curPage = curPage.selectChoice( driver, wait, choice );
+                            try {
+                                score = curPage.getScore( wait );
+                            } catch( NumberFormatException ignore ) {
+                                // do nothing; use score last read
+                            }
+
+                        } catch ( TimeoutException exn ) {
+                            // check again if season has ended
+                            // because the fade-in can be slow
+
+                            if ( EndOfSeasonPage.page.isShown( driver, wait ) ) {
+                                // TODO: deduplicate
+                                //final int nimpregs = Page.getImpregnations( wait );
+                                runs.add( new Tuple<>( curRun, score ) );
+                                // log run
+                                logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
+                                // no need to click the button
+                                // begin next iteration in while loop
+                                // reload the page
+                                break;
+                            } else {
+                                logger.error("Ran out of choices before season end for run {}", runAsString( curRun ));
+                                throw exn;
+                            }
+                        }
 
                         // check if we returned to main page
                         if ( MainPage.page.isShown( driver, wait ) ) {
@@ -112,13 +145,16 @@ public class App {
                             curPage = MainPage.page;
                         }
 
-                        if ( EndOfLifePage.page.isShown( driver, wait ) ) {
+                        // check if the season has ended
+                        if ( EndOfSeasonPage.page.isShown( driver, wait ) ) {
                             // end the run
-                            final int nimpregs = Page.getImpregnations( wait );
-                            runs.add( new Tuple<>( curRun, nimpregs ) );
+                            //final int nimpregs = Page.getImpregnations( wait );
+                            runs.add( new Tuple<>( curRun, score ) );
                             // log run
-                            logger.info(String.format("Got %d impregs on run %s.", nimpregs, runAsString( curRun )));
+                            logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
+                            // no need to click the button
                             // begin next iteration in while loop
+                            // reload the page
                             break;
                         }
                     }
@@ -155,13 +191,15 @@ public class App {
             return choices.stream().collect(Collectors.joining("\n- ","- ",""));
         }
 
-        default Page selectChoice( WebDriver driver, WebDriverWait wait, int choice ) {
+        default Page selectChoice( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException {
             final List<WebElement> prevChoices = this.getChoices( driver, wait );
             // remember text to see if anything has changed
             final String prevChoicesText = listChoices( driver, wait );
             
             // perform action
-            prevChoices.get( choice ).click();
+            final WebElement choiceElement = prevChoices.get( choice );
+            logger.debug("Choosing {}", choiceElement.getText());
+            choiceElement.click();
 
             // wait for the next page to open
             wait.until(presenceOfElementLocated(By.xpath("//*[@id='passages']//*[contains(@class, 'macro-link')]")));
@@ -175,8 +213,8 @@ public class App {
             return new SomePage();
         }
 
-        // visible on any page
-        static int getImpregnations( WebDriverWait wait ) {
+        // visible on most pages, but not Season-End
+        default int getScore( WebDriverWait wait ) {
             final String nimpregs = wait.until(presenceOfElementLocated(BY_N_IMPREGNATIONS)).getText();
             return Integer.parseInt(nimpregs);
         }
@@ -190,7 +228,7 @@ public class App {
 
         public boolean isShown( WebDriver driver, WebDriverWait wait ) {
             try {
-                logger.info("Checking for MainPage...");
+                //logger.debug("Checking for MainPage...");
                 return driver.findElement(BY_MAIN_TITLE).getText().equals("In your mind's eye, fertile wombs glitter like gems all around you. You sense...");
             } catch( NoSuchElementException exn ) {
                 return false;
@@ -205,14 +243,14 @@ public class App {
         }
     }
 
-    static class EndOfLifePage implements Page {
+    static class EndOfSeasonPage implements Page {
 
-        static final EndOfLifePage page = new EndOfLifePage();
+        static final EndOfSeasonPage page = new EndOfSeasonPage();
         static final By BY_BUTTON_CONTINUE_TO_EPILOGUE = By.xpath("/html/body/div[5]/div/div/button");
 
         public boolean isShown( WebDriver driver, WebDriverWait wait ) {
            try {
-                logger.info("Checking for EndOfLifePage...");
+                //logger.debug("Checking for EndOfSeasonPage...");
                 return driver.findElement(BY_BUTTON_CONTINUE_TO_EPILOGUE).getText().equals("Continue to Epilogue...");
             } catch( NoSuchElementException exn ) {
                 return false;
@@ -269,7 +307,8 @@ public class App {
 
     static String runAsString( List<Tuple<Integer,Integer>> choices ) {
         return choices.stream()
-            .map( e -> String.format("%d/%d", e.fst, e.snd) )
+            // abbreviate "1/1" to "-"
+            .map( e -> e.snd == 0 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
             .collect(Collectors.joining(", ","[","]"));
     }
 }
