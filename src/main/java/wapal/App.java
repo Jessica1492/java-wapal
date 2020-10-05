@@ -39,13 +39,7 @@ public class App {
             if ( ic_path == null || ic_path.isEmpty() ) {
                 System.err.println("You MUST point environment variable IC_PATH to the location of your Incubus City installation.");
                 System.exit(1);
-            }
-            
-            logger.debug("Hello Debug");
-            logger.info("Hello Info");
-            logger.warn("Hello Warning");
-            logger.error("Hello Error");
-            
+            }          
             
             // datastructure:
             // list of run results is a tuple of (run R, number of impregs)
