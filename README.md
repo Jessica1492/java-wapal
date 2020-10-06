@@ -2,6 +2,13 @@
 
 Selenium-automated exhaustive search for high-score in Incubus City.
 
+To be able to search exhaustively,
+you must patch your `Incubus City v1.10.4.html`
+by changing line 21393
+from `&lt;&lt;if random(10)&lt;$incubusXP+8 &gt;&gt;`
+to e.g. `&lt;&lt;if random(0)&lt;$incubusXP+8 &gt;&gt;`.
+This will show all possible choices deterministically.
+
 # Setup
 
 1. Download [Firefox Selenium driver](https://github.com/mozilla/geckodriver)
