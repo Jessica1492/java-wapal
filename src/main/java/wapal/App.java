@@ -46,7 +46,12 @@ public class App {
             if ( ic_path == null || ic_path.isEmpty() ) {
                 System.err.println("You MUST point environment variable IC_PATH to the location of your Incubus City installation.");
                 System.exit(1);
-            }          
+            }
+
+            logger.info("Starting Incubus City from "+ic_path);
+
+            // NOTE: reloading the game does not restart it; Twine is too cachy for that
+            driver.get(ic_path);
             
             // datastructure:
             // list of run results is a tuple of (run R, number of impregs)
@@ -61,10 +66,6 @@ public class App {
 
                     // start a new run
                     {
-                        logger.info("Starting Incubus City from "+ic_path);
-
-                        // NOTE: reloading the game does not restart it; Twine is too cachy for that
-                        driver.get(ic_path);
 
                         /*
                         // open a new tab to run a season of IC in
@@ -99,7 +100,7 @@ public class App {
                         // TODO: handle result
 
                         final int nlocations = MainPage.page.getChoices(driver,wait).size();
-                        logger.debug("Choices available:\n" + MainPage.page.listChoices(driver,wait));
+                        //logger.debug("Choices available:\n" + MainPage.page.listChoices(driver,wait));
 
                         // insert a dummy run
                         if ( runs.isEmpty() ) {
@@ -109,6 +110,9 @@ public class App {
 
                     // get the newest previous run
                     final List<Tuple<Integer,Integer>> prevRun = runs.get(runs.size()-1).fst;
+                    // track position up until which we do not deviate from the previous run
+                    int prevRunMaxValidIndex = prevRun.size();
+
                     final List<Tuple<Integer,Integer>> curRun = new LinkedList<>();
 
                     // point to the currently open page
@@ -119,13 +123,20 @@ public class App {
                         final int noptions = curPage.getChoices(driver,wait).size();
                         score = curPage.getScore( wait );
 
-                        // make a choice at current point
+                        // calculate a choice at current point
                         final int choice;
-                        if ( choiceIndex < prevRun.size() ) {
+                        if ( choiceIndex < prevRunMaxValidIndex ) {
                             // point has been visited before
                             // choose like in the previous run,
                             // unless all later choices have been exhausted
-                            choice = chooseNextDFS( prevRun, choiceIndex );
+                            final Either<Integer,Integer> eitherChoice = chooseNextDFS( prevRun, choiceIndex );
+                            if ( eitherChoice.isRight() ) {
+                                choice = eitherChoice.getRight();
+                            } else {
+                                choice = eitherChoice.getLeft();
+                                prevRunMaxValidIndex = choiceIndex-1;
+                            }
+
                         } else {
                             // enter new territory
                             // assume there is at least 1 choice
@@ -135,14 +146,16 @@ public class App {
                         // commit choice
                         curRun.add( new Tuple<>(choice,noptions) );
                         
-                        // perform the action
-                        // wait for the next page to open
                         try {
-                            curPage = curPage.selectChoice( driver, wait, choice );
+                            // perform the action
+                            // wait for the next page to open
+                            curPage = curPage.selectChoiceAndWait( driver, wait, choice );
+                            
                             try {
+                                // update score after making the choice
                                 score = curPage.getScore( wait );
                             } catch( NumberFormatException ignore ) {
-                                // do nothing; use score last read
+                                // do nothing if score is not found; use score last read
                             }
 
                         } catch ( TimeoutException exn ) {
@@ -150,11 +163,10 @@ public class App {
                             // because the fade-in can be slow
 
                             if ( EndOfSeasonPage.page.isShown( driver, wait ) ) {
-                                // TODO: deduplicate
                                 //final int nimpregs = Page.getImpregnations( wait );
                                 runs.add( new Tuple<>( curRun, score ) );
                                 // log run
-                                logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
+                                logger.info("Got {} impregs on run {}", score, runAsString( curRun ));
                                 // no need to click the button
                                 // begin next iteration in while loop
                                 curPage.restart( driver, wait );
@@ -176,27 +188,12 @@ public class App {
                             curPage = MainPage.page;
                         }
 
-                        // check if the season has ended
-                        if ( EndOfSeasonPage.page.isShown( driver, wait ) ) {
-
-                            curPage = EndOfSeasonPage.page;
-
-                            // end the run
-                            //final int nimpregs = Page.getImpregnations( wait );
-                            runs.add( new Tuple<>( curRun, score ) );
-                            // log run
-                            logger.info(String.format("Got %d impregs on run %s.", score, runAsString( curRun )));
-                            // no need to click the button
-                            // begin next iteration in while loop
-                            curPage.restart( driver, wait );
-                            break;
-                        }
                     }
                 }
-            } catch( IllegalArgumentException exn ) {
+            } catch( SearchSpaceExhaustedException exn ) {
                 // End-of-life
-                logger.error("Exhausted");
-                logger.error(exn);
+                logger.info("Search Space Exhausted");
+                logger.info(exn);
             }
 
             
@@ -210,10 +207,15 @@ public class App {
       * In this case a restart needs to be signaled.
       */
     static class RestartRequiredException extends Exception {
-        public RestartRequiredException( String reason ) {
-            super(reason);
+        public RestartRequiredException( String message ) {
+            super( message );
         }
+    }
 
+    static class SearchSpaceExhaustedException extends Exception {
+        public SearchSpaceExhaustedException( String message ) {
+            super( message );
+        }
     }
 
     
@@ -236,7 +238,7 @@ public class App {
             return choices.stream().collect(Collectors.joining("\n- ","- ",""));
         }
 
-        default Page selectChoice( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException, RestartRequiredException {
+        default Page selectChoiceAndWait( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException, RestartRequiredException {
             final List<WebElement> prevChoices = this.getChoices( driver, wait );
             // remember text to see if anything has changed
             final String prevChoicesText = listChoices( driver, wait );
@@ -245,6 +247,7 @@ public class App {
             final WebElement choiceElement = prevChoices.get( choice );
             logger.debug("Choosing {}", choiceElement.getText());
             choiceElement.click();
+        
 
             // wait for the next page to open
             wait.until(presenceOfElementLocated(By.xpath("//*[@id='passages']//*[contains(@class, 'macro-link')]")));
@@ -264,17 +267,20 @@ public class App {
             return Integer.parseInt(nimpregs);
         }
 
-        static final By BY_BUTTON_RESTART = By.xpath("/html/body/div[4]/div[2]/nav/ul/li[3]/a");
+        static final By BY_BUTTON_RESTART = By.xpath("//a[text()='Restart']");
 
         default void restart( WebDriver driver, WebDriverWait wait ) {
             final WebElement buttonRestart = driver.findElement(BY_BUTTON_RESTART);
             
-            if ( ! buttonRestart.getText().equals("Restart") ) {
+            /*if ( ! buttonRestart.getText().equals("Restart") ) {
                 logger.error("Restart button not found at xpath");
                 // proceed to click whatever we found anyway
-            }
+            }*/
 
             buttonRestart.click();
+
+            // wait for modal confirmation dialog to open & click it
+            wait.until(presenceOfElementLocated(By.id("restart-ok"))).click();
         }
     }
 
@@ -304,7 +310,7 @@ public class App {
     static class EndOfSeasonPage implements Page {
 
         static final EndOfSeasonPage page = new EndOfSeasonPage();
-        static final By BY_BUTTON_CONTINUE_TO_EPILOGUE = By.xpath("/html/body/div[5]/div/div/button");
+        static final By BY_BUTTON_CONTINUE_TO_EPILOGUE = By.xpath("//button[text()='Continue to Epilogue...']");
 
         public boolean isShown( WebDriver driver, WebDriverWait wait ) {
            try {
@@ -324,6 +330,42 @@ public class App {
         public Tuple( A a, B b ) { this.fst=a; this.snd=b; }
     }
 
+    interface Either<A,B> {
+
+        static <AA,BB> Left<AA,BB> left( AA a ) { return new Left<>(a); }
+        static <AA,BB> Right<AA,BB> right( BB b ) { return new Right<>(b); }
+
+        default boolean isLeft() { return ! this.isRight(); }
+        boolean isRight();
+
+        A getLeft();
+        B getRight();
+
+    }
+
+    static class Left<A,B> implements Either<A,B> {
+        final A a;
+        public Left( A a ) { this.a=a; }
+
+        public boolean isRight() { return false; }
+
+        public A getLeft() { return this.a; }
+        public B getRight() { throw new IllegalStateException("Left has no Right"); }
+
+    }
+    static class Right<A,B> implements Either<A,B> {
+        final B b;
+        public Right( B b) { this.b=b; }
+
+        public boolean isRight() { return true; }
+
+        public A getLeft() { throw new IllegalStateException("Right has no Left"); }
+        public B getRight() { return this.b; }
+
+    }
+
+    
+
     /**
      * Given:
      * @param choices a list representing a complete previous run,
@@ -333,7 +375,7 @@ public class App {
      * And given:
      * @param off the current number of choices already made (i.e. the offset in the list).
      * Then this function will:
-     * @return the index of the next choice to be made.
+     * @return the index of the next choice to be made. Right if the choice follows what 'choices' contained, Left if it deviates
      *
      * Performs a depth-first-search.
      * Finds the last position in the choice list with unchosen options available
@@ -341,7 +383,7 @@ public class App {
      * It could be more efficient to calculate the expected run up until this point,
      * but I suppose we're spending much more time waiting on Selenium that iterating this list.
      */
-    public static int chooseNextDFS( List<Tuple<Integer,Integer>> choices, int off ) throws IllegalArgumentException {
+    public static Either<Integer,Integer> chooseNextDFS( List<Tuple<Integer,Integer>> choices, int off ) throws SearchSpaceExhaustedException {
 
         // iterate backwards from the end
         for( int i = choices.size()-1; i > off; i-- ) {
@@ -349,17 +391,17 @@ public class App {
             // more options available at a later point
             if ( t_i.fst < t_i.snd-1 ) {
                 // repeat the choice made at point 'off' to reach the later point
-                return choices.get(off).fst;
+                return Either.right( choices.get(off).fst );
             }
         }
         // no unchosen options were available at any later point
         // check if current choice point has unchosen options
         final Tuple<Integer,Integer> t_off = choices.get(off);
         if ( t_off.fst < t_off.snd-1 ) {
-            return choices.get(off).fst+1;
+            return Either.left( choices.get(off).fst+1 );
         } else {
             final String run_str = runAsString( choices );
-            throw new IllegalArgumentException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
+            throw new SearchSpaceExhaustedException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
         }
     }
 

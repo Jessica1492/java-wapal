@@ -23,7 +23,7 @@ public class AppTest
     public void testChooseNextDFS()
     {
         // 2 choices in the 1st position, 1 choice in the 2nd position
-        final List<Tuple<Integer,Integer>> run = Arrays.asList(t(0,2), t(0,1));
+        final List<Tuple<Integer,Integer>> run = Arrays.asList(t(0,2), t(0,1), t(0,1));
 
         // at 0
         assertEquals( 1, App.chooseNextDFS( run, 0 ) );
@@ -31,6 +31,11 @@ public class AppTest
         // at 1
         final Exception exn = assertThrows( IllegalArgumentException.class, () -> {
             App.chooseNextDFS( run, 1 );
+        });
+
+        // at 2
+        final Exception exn = assertThrows( IllegalArgumentException.class, () -> {
+            App.chooseNextDFS( run, 2 );
         });
     }
 
