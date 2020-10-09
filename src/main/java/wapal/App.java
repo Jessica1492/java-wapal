@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 // TODO: you may encounter the Fence at the first run, and it is completely useless
@@ -167,19 +166,19 @@ public class App {
                                 //final int nimpregs = Page.getImpregnations( wait );
                                 runs.add( new Tuple<>( curRun, score ) );
                                 // log run
-                                logger.info("Got {} impregs on run {}", score, runAsString( curRun ));
+                                logger.info("Got {} impregs on run {}", score, Run.asString( curRun ));
                                 // no need to click the button
                                 // begin next iteration in while loop
                                 curPage.restart( driver, wait );
                                 
                                 continue next_season;
                             } else {
-                                logger.error("Ran out of choices before season end for run {}", runAsString( curRun ));
+                                logger.error("Ran out of choices before season end for run {}", Run.asString( curRun ));
                                 throw exn;
                             }
                         } catch( RestartRequiredException exn ) {
 
-                            logger.warn("Restarting stalled run {}", runAsString( curRun ));
+                            logger.warn("Restarting stalled run {}", Run.asString( curRun ));
                             curPage.restart( driver, wait );
                             
                             continue next_season;
@@ -326,59 +325,6 @@ public class App {
     }
 
 
-    /** Tuple class, because Java has none canonical. */
-    public static class Tuple<A,B> {
-        public final A fst;
-        public final B snd;
-        public Tuple( A a, B b ) { this.fst=a; this.snd=b; }
-    }
-
-    interface Either<A,B> {
-
-        static <AA,BB> Left<AA,BB> left( AA a ) { return new Left<>(a); }
-        static <AA,BB> Right<AA,BB> right( BB b ) { return new Right<>(b); }
-
-        default boolean isLeft() { return ! this.isRight(); }
-        boolean isRight();
-
-        A getLeft();
-        B getRight();
-
-        static class Left<A,B> implements Either<A,B> {
-            final A a;
-            public Left( A a ) { this.a=a; }
-
-            public boolean isRight() { return false; }
-
-            public A getLeft() { return this.a; }
-            public B getRight() { throw new IllegalStateException("Left has no Right"); }
-
-            public boolean equals( Object o ) {
-                return o instanceof Either && Objects.equals( ((Either)o).getLeft(), a );
-            }
-            public String toString() { return String.format("Left[%s]", a); }
-        }
-        static class Right<A,B> implements Either<A,B> {
-            final B b;
-            public Right( B b) { this.b=b; }
-
-            public boolean isRight() { return true; }
-
-            public A getLeft() { throw new IllegalStateException("Right has no Left"); }
-            public B getRight() { return this.b; }
-
-            public boolean equals( Object o ) {
-                return o instanceof Either && Objects.equals( ((Either)o).getRight(), b );
-            }
-            public String toString() { return String.format("Right[%s]", b); }
-        }
-
-    }
-
-    
-
-    
-
     /**
      * Given:
      * @param choices a list representing a complete previous run,
@@ -413,16 +359,22 @@ public class App {
         if ( t_off.fst < t_off.snd-1 ) {
             return Either.left( choices.get(off).fst+1 );
         } else {
-            final String run_str = runAsString( choices );
+            final String run_str = Run.asString( choices );
             throw new SearchSpaceExhaustedException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
         }
     }
 
-    static String runAsString( List<Tuple<Integer,Integer>> choices ) {
-        return choices.stream()
-            // abbreviate "1/1" to "-"
-            .map( e -> e.snd == 1 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
-            .collect(Collectors.joining(", ","[","]"));
+    interface Run extends List<Tuple<Integer,Integer>> {
+
+        /** Render a run datastructure as a string*/
+        static String asString( List<Tuple<Integer,Integer>> choices ) {
+            return choices.stream()
+                // abbreviate "1/1" to "-"
+                .map( e -> e.snd == 1 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
+                .collect(Collectors.joining(", ","[","]"));
+        }
     }
+
+    
 }
   
