@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 // TODO: you may encounter the Fence at the first run, and it is completely useless
@@ -59,7 +60,7 @@ public class App {
             final List<Tuple<List<Tuple<Integer,Integer>>,Integer>> runs = new ArrayList<>();
             
             try {
-                while( true ) {
+                next_season: while( true ) {
 
                     // store the score "globally" here, because the season-end page may not show it
                     int score = 0;
@@ -170,7 +171,8 @@ public class App {
                                 // no need to click the button
                                 // begin next iteration in while loop
                                 curPage.restart( driver, wait );
-                                break;
+                                
+                                continue next_season;
                             } else {
                                 logger.error("Ran out of choices before season end for run {}", runAsString( curRun ));
                                 throw exn;
@@ -179,7 +181,8 @@ public class App {
 
                             logger.warn("Restarting stalled run {}", runAsString( curRun ));
                             curPage.restart( driver, wait );
-                            break;
+                            
+                            continue next_season;
                         }
 
                         // check if we returned to main page
@@ -341,28 +344,38 @@ public class App {
         A getLeft();
         B getRight();
 
+        static class Left<A,B> implements Either<A,B> {
+            final A a;
+            public Left( A a ) { this.a=a; }
+
+            public boolean isRight() { return false; }
+
+            public A getLeft() { return this.a; }
+            public B getRight() { throw new IllegalStateException("Left has no Right"); }
+
+            public boolean equals( Object o ) {
+                return o instanceof Either && Objects.equals( ((Either)o).getLeft(), a );
+            }
+            public String toString() { return String.format("Left[%s]", a); }
+        }
+        static class Right<A,B> implements Either<A,B> {
+            final B b;
+            public Right( B b) { this.b=b; }
+
+            public boolean isRight() { return true; }
+
+            public A getLeft() { throw new IllegalStateException("Right has no Left"); }
+            public B getRight() { return this.b; }
+
+            public boolean equals( Object o ) {
+                return o instanceof Either && Objects.equals( ((Either)o).getRight(), b );
+            }
+            public String toString() { return String.format("Right[%s]", b); }
+        }
+
     }
 
-    static class Left<A,B> implements Either<A,B> {
-        final A a;
-        public Left( A a ) { this.a=a; }
-
-        public boolean isRight() { return false; }
-
-        public A getLeft() { return this.a; }
-        public B getRight() { throw new IllegalStateException("Left has no Right"); }
-
-    }
-    static class Right<A,B> implements Either<A,B> {
-        final B b;
-        public Right( B b) { this.b=b; }
-
-        public boolean isRight() { return true; }
-
-        public A getLeft() { throw new IllegalStateException("Right has no Left"); }
-        public B getRight() { return this.b; }
-
-    }
+    
 
     
 
