@@ -75,13 +75,9 @@ public class App {
                         //
                         wait.until(elementToBeClickable(BY_LINK_EPOCH_BEGINS)).click();
 
-                        // TODO: enable all options via Javascript
-
                         MainPage.page.isShown( driver, wait );
-                        // TODO: handle result
 
                         final int nlocations = MainPage.page.getChoices(driver,wait).size();
-                        //logger.debug("Choices available:\n" + MainPage.page.listChoices(driver,wait));
 
                         // insert a dummy run
                         if ( runs.isEmpty() ) {
@@ -91,9 +87,7 @@ public class App {
 
                     // get the newest previous run
                     final List<Tuple<Integer,Integer>> prevRun = runs.get(runs.size()-1).fst;
-                    // track position up until which we do not deviate from the previous run
-                    //int prevRunMaxValidIndex = prevRun.size();
-
+                    // precompute run as deep as possible from previous run
                     final List<Tuple<Integer,Integer>> curRun = nextPrefixDFS( prevRun );
 
                     logger.debug("Starting next run {}", Run.asString(curRun));
