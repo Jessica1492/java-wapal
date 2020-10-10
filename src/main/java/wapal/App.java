@@ -66,25 +66,6 @@ public class App {
 
                     // start a new run
                     {
-
-                        /*
-                        // open a new tab to run a season of IC in
-                        // TODO: fix org.openqa.selenium.NoSuchWindowException: Browsing context has been discarded
-                        try {
-                            // switch to leftover tab of the previous season
-                            driver.switchTo().window(ACTIVE_WINDOW_NAME);
-                            // and close it
-                            driver.close();
-                        } catch( NoSuchWindowException ignore ) {}
-                        
-                        // make sure page is reloaded on each iteration by opening in a new tab
-                        final String js_open_new_tab = "window.open('"+ic_path+"','"+ACTIVE_WINDOW_NAME+"');";
-                        ((JavascriptExecutor)driver).executeScript(js_open_new_tab);
-
-                        // switch to the new tab
-                        driver.switchTo().window(ACTIVE_WINDOW_NAME);
-                        */
-                        
             
                         logger.info("Waiting for SugarCube to finish loading...");
                         // wait until button is clickable
@@ -104,52 +85,47 @@ public class App {
 
                         // insert a dummy run
                         if ( runs.isEmpty() ) {
-                            runs.add( new Tuple<>( Collections.singletonList( new Tuple<>(-1, nlocations ) ), score ) );
+                            runs.add( new Tuple<>( Run.singleton( nlocations ), score ) );
                         }
                     }
 
                     // get the newest previous run
                     final List<Tuple<Integer,Integer>> prevRun = runs.get(runs.size()-1).fst;
                     // track position up until which we do not deviate from the previous run
-                    int prevRunMaxValidIndex = prevRun.size();
+                    //int prevRunMaxValidIndex = prevRun.size();
 
-                    final List<Tuple<Integer,Integer>> curRun = new LinkedList<>();
+                    final List<Tuple<Integer,Integer>> curRun = nextPrefixDFS( prevRun );
+
+                    logger.debug("Starting next run {}", Run.asString(curRun));
 
                     // point to the currently open page
                     Page curPage = MainPage.page;
 
+                    // actual length of current may change because of decisions made
                     for( int choiceIndex = 0; true; choiceIndex++ ) {
                         // analyze current page
                         final int noptions = curPage.getChoices(driver,wait).size();
+
+                        // update score
                         score = curPage.getScore( wait );
 
                         // calculate a choice at current point
                         final int choice;
-                        if ( choiceIndex < prevRunMaxValidIndex ) {
-                            // point has been visited before
-                            // choose like in the previous run,
-                            // unless all later choices have been exhausted
-                            final Either<Integer,Integer> eitherChoice = chooseNextDFS( prevRun, choiceIndex );
-                            if ( eitherChoice.isRight() ) {
-                                choice = eitherChoice.getRight();
-                            } else {
-                                choice = eitherChoice.getLeft();
-                                prevRunMaxValidIndex = choiceIndex-1;
-                            }
-
+                        if( choiceIndex < curRun.size() ) {
+                            // proceed as predicted
+                            choice = curRun.get( choiceIndex ).fst;
                         } else {
                             // enter new territory
                             // assume there is at least 1 choice
                             choice = 0;
+                            // commit choice
+                            curRun.add( new Tuple<>(choice,noptions) );
                         }
-
-                        // commit choice
-                        curRun.add( new Tuple<>(choice,noptions) );
                         
                         try {
                             // perform the action
                             // wait for the next page to open
-                            curPage = curPage.selectChoiceAndWait( driver, wait, choice );
+                            curPage = curPage.selectChoiceAndWait( driver, wait, choiceIndex, choice );
                             
                             try {
                                 // update score after making the choice
@@ -182,6 +158,11 @@ public class App {
                             curPage.restart( driver, wait );
                             
                             continue next_season;
+                        } catch( IndexOutOfBoundsException exn ) {
+                            // a previous run was not reproducible, because something changed
+                            logger.error("Run contained non-reproducible junction {} because something changed: {}", choiceIndex, Run.asString( curRun ));
+
+                            curPage.restart( driver, wait );
                         }
 
                         // check if we returned to main page
@@ -240,14 +221,25 @@ public class App {
             return choices.stream().collect(Collectors.joining("\n- ","- ",""));
         }
 
-        default Page selectChoiceAndWait( WebDriver driver, WebDriverWait wait, int choice ) throws TimeoutException, RestartRequiredException {
+        /**
+         * Choose
+         * @param choice the j-th option in dialogue
+         * @param point_i at choice-point i
+         */
+        default Page selectChoiceAndWait( WebDriver driver, WebDriverWait wait, int point_i, int choice ) throws TimeoutException, RestartRequiredException {
+
             final List<WebElement> prevChoices = this.getChoices( driver, wait );
             // remember text to see if anything has changed
             final String prevChoicesText = listChoices( driver, wait );
             
             // perform action
-            final WebElement choiceElement = prevChoices.get( choice );
-            logger.debug("Choosing {}", choiceElement.getText());
+            final WebElement choiceElement;
+            try { choiceElement = prevChoices.get( choice ); }
+            catch( IndexOutOfBoundsException exn ) {
+                logger.error("Failed trying to choose {} from {}", choice, prevChoicesText );
+                throw exn;
+            }
+            logger.debug("choice {} ({}/{}): {}", point_i, choice+1, prevChoices.size(), choiceElement.getText());
             choiceElement.click();
         
 
@@ -326,45 +318,52 @@ public class App {
 
 
     /**
-     * Given:
-     * @param choices a list representing a complete previous run,
-     * where each tuple contains:
-     * - fst: the index of the choice made
-     * - snd: the maximum index possible at that choice point (dependent on previous choices)
-     * And given:
-     * @param off the current number of choices already made (i.e. the offset in the list).
-     * Then this function will:
-     * @return the index of the next choice to be made. Right if the choice follows what 'choices' contained, Left if it deviates
-     *
-     * Performs a depth-first-search.
-     * Finds the last position in the choice list with unchosen options available
-     * and selects the next.
-     * It could be more efficient to calculate the expected run up until this point,
-     * but I suppose we're spending much more time waiting on Selenium that iterating this list.
+     * Given a previous
+     * @param run e.g. [2/3, 1/2, 1/1], will
+     * @return the prefix with an increment of the deepest position, i.e. [2/3, 2/2]
+     * The call can the extend this run into the unknown.
      */
-    public static Either<Integer,Integer> chooseNextDFS( List<Tuple<Integer,Integer>> choices, int off ) throws SearchSpaceExhaustedException {
+    public static List<Tuple<Integer,Integer>> nextPrefixDFS( List<Tuple<Integer,Integer>> run ) throws SearchSpaceExhaustedException {
+
+        if( run.isEmpty() ) {
+            return run;
+        }
 
         // iterate backwards from the end
-        for( int i = choices.size()-1; i > off; i-- ) {
-            final Tuple<Integer,Integer> t_i = choices.get(i);
-            // more options available at a later point
-            if ( t_i.fst < t_i.snd-1 ) {
-                // repeat the choice made at point 'off' to reach the later point
-                return Either.right( choices.get(off).fst );
+        int i;
+        Tuple<Integer,Integer> t_i = null; // assert: run.size()>0, therefore below loop is run at least once
+        for( i = run.size()-1; i >= 0; i-- ) {
+            t_i = run.get(i);
+            // more options are avaiable at this point
+            if( t_i.fst < t_i.snd-1 ) {
+                break;
             }
         }
-        // no unchosen options were available at any later point
-        // check if current choice point has unchosen options
-        final Tuple<Integer,Integer> t_off = choices.get(off);
-        if ( t_off.fst < t_off.snd-1 ) {
-            return Either.left( choices.get(off).fst+1 );
-        } else {
-            final String run_str = Run.asString( choices );
-            throw new SearchSpaceExhaustedException(String.format("Exhausted: all options at offset %d (of %d total) already visited in run %s", off, t_off.snd, run_str));
+        // i now contains the maximum stable prefix length
+        if ( i < 0 ) {
+            throw new SearchSpaceExhaustedException(String.format("Exhausted: all options at offset 0 already visited in run %s", Run.asString( run ) ));
         }
+
+        // collect into mutable list up until before the junction point
+        final List<Tuple<Integer,Integer>> res = run.stream().limit( i ).collect( ArrayList::new, ArrayList::add, ArrayList::addAll );
+        
+        // increase by 1 at junction point
+        // append new junction to stable prefix
+        final Tuple<Integer,Integer> plus1 = new Tuple<>( t_i.fst+1, t_i.snd );
+        res.add( plus1 );
+
+        return res;
     }
 
     interface Run extends List<Tuple<Integer,Integer>> {
+
+        static List<Tuple<Integer,Integer>> empty() {
+            return new LinkedList<Tuple<Integer,Integer>>();
+        }
+
+        static List<Tuple<Integer,Integer>> singleton( int nlocations ) {
+            return Collections.singletonList( new Tuple<>(-1, nlocations ) );
+        }
 
         /** Render a run datastructure as a string*/
         static String asString( List<Tuple<Integer,Integer>> choices ) {
