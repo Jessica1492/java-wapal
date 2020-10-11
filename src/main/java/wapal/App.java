@@ -16,11 +16,16 @@ import static org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElemen
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
@@ -34,6 +39,8 @@ public class App {
 
     // name of the active tab
     static final String ACTIVE_WINDOW_NAME = "IC_window";
+
+    static final Path RUN_LOG = Path.of( "./run.log" );
 
     static final Logger logger = LogManager.getRootLogger();
 
@@ -58,7 +65,7 @@ public class App {
             // datastructure:
             // list of run results is a tuple of (run R, number of impregs)
             // run R is a list of (index of choice made, number of total options) at each choice point / page
-            final List<Tuple<Run,Integer>> runs = new ArrayList<>();
+            final List<Tuple<Run,Integer>> runs = Continuity.recoverRunsFromLog( RUN_LOG );
             
             try {
                 next_season: while( true ) {
@@ -138,7 +145,7 @@ public class App {
                                 //final int nimpregs = Page.getImpregnations( wait );
                                 runs.add( new Tuple<>( curRun, score ) );
                                 // log run
-                                logger.info("Got {} impregs on run {}", score, Run.asString( curRun ));
+                                Continuity.logSuccess( curRun, score );
                                 // no need to click the button
                                 // begin next iteration in while loop
                                 curPage.restart( driver, wait );
@@ -366,12 +373,26 @@ public class App {
         }
 
         /** Render a run datastructure as a string*/
-        static String asString( List<Tuple<Integer,Integer>> choices ) {
+        static String asString( Run choices ) {
             return choices.stream()
                 // abbreviate "1/1" to "-"
                 .map( e -> e.snd == 1 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
                 .collect(Collectors.joining(", ","[","]"));
-        }      
+        }
+
+        /** @return if parsing is successful, return Right<Run>, otherwise Left<String> */
+        static Either<String,Run> fromString( String str ) {
+            if ( ! str.startsWith("[") ) return Either.left(str);
+            if ( ! str.endsWith("]") ) return Either.left(str); 
+            final Run run = Arrays.stream( str.substring(1, str.length()-1).split(", *") )
+                // revert the shorthand
+                .map( e -> "-".equals(e) ? "1/1" : e )
+                .map( e -> e.split("/") )
+                // subtract 1 from choice offset
+                .map( xy -> new Tuple<>( Integer.parseInt( xy[0] )-1, Integer.parseInt( xy[1] ) ) )
+                .collect( Run.collect() );
+            return Either.right( run );
+        }
 
         static Collector<Tuple<Integer,Integer>,Run,Run> collect() {
             // combiner (3rd argument) needs a wrapper, as opposed to its inlined variant:
@@ -384,6 +405,43 @@ public class App {
         }
     }
 
-    
-}
+    interface Continuity {
+
+        static final String LOG_FORMAT = "Got {} impregs on run {}";
+        static final Pattern LOG_PATTERN = Pattern.compile( ".* Got ([0-9]+) impregs on run (.*)" );
+                    
+        static void logSuccess( Run run, int score ) {
+            logger.info( LOG_FORMAT, score, Run.asString( run ));
+        }
+
+        static List<Tuple<Run,Integer>> recoverRunsFromLog( Path logfile ) {
   
+        try {
+            //return
+            final java.util.stream.Stream<Tuple<Run,Integer>> strm =
+             Files.lines( logfile )
+                 // subject all lines to the matcher
+                 .map( LOG_PATTERN::matcher )
+                 // keep only lines that match the pattern
+                 .filter( Matcher::matches )
+                 // extract score and run description
+                 .map( mtc ->
+                    Run.fromString(mtc.group(2))
+                       .mapRight( run -> new Tuple( run, Integer.parseInt(mtc.group(1)) ) ) )
+                 // log failures to parse
+                 .map( ei -> ei.mapLeft( malformedStr -> { logger.warn("Failed to parse run description %s", malformedStr); return malformedStr;} ) )
+                 // unwrap results for which parsing succeded
+                 .filter( Either::isRight )
+                 .map( Either::getRight )
+            ; return strm
+                // TODO annotate type information to method call instead of storing the intermediate. dont cast!
+                .collect( Collectors.toList() );
+        } catch( IOException exn ) {
+            logger.warn("Failed to recover from log {}", logfile);
+            return new ArrayList<>();
+        }
+    }
+
+    }
+
+}

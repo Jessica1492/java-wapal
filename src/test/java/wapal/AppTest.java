@@ -47,4 +47,23 @@ public class AppTest
             App.nextPrefixDFS( run );
         }, "There are no more options to choose from in step 1");
     }
+
+    @Test
+    public void testRunRecovery() {
+
+        final String runAsStr = "[0/3, -, 1/2]";
+        final Either<String,Run> r = App.Run.fromString( runAsStr );
+        final Either<String,Run> expected = Either.right( Run.ofSteps( t(0,3), t(0,1), t(1,2) ) );
+
+        assertEquals( expected, r );
+    }
+
+    @Test
+    public void failRunRecovery() {
+
+        final String runAsStr = "[Hello, world]";
+        final Either<String,Run> r = App.Run.fromString( runAsStr );
+
+        assertEquals( true, r.isLeft() );
+    }
 }

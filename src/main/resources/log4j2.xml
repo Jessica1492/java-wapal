@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="DEBUG">
   <Appenders>
+
     <Console name="Stdout" target="SYSTEM_OUT">
       <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %p %m%n"/>
     </Console>
+
+    <!-- App will also attempt to recover aborted sessions from this log -->
+    <File name="File" fileName="run.log">
+      <PatternLayout>
+        <pattern>%d %p %m%n</pattern>
+      </PatternLayout>
+    </File>
+
   </Appenders>
   <Loggers>
     <Root level="DEBUG">
       <AppenderRef ref="Stdout"/>
+      <AppenderRef ref="File"/>
     </Root>
   </Loggers>
 </Configuration>
