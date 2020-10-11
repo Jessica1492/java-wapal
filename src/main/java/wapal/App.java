@@ -17,9 +17,11 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 // TODO: you may encounter the Fence at the first run, and it is completely useless
@@ -56,7 +58,7 @@ public class App {
             // datastructure:
             // list of run results is a tuple of (run R, number of impregs)
             // run R is a list of (index of choice made, number of total options) at each choice point / page
-            final List<Tuple<List<Tuple<Integer,Integer>>,Integer>> runs = new ArrayList<>();
+            final List<Tuple<Run,Integer>> runs = new ArrayList<>();
             
             try {
                 next_season: while( true ) {
@@ -86,9 +88,9 @@ public class App {
                     }
 
                     // get the newest previous run
-                    final List<Tuple<Integer,Integer>> prevRun = runs.get(runs.size()-1).fst;
+                    final Run prevRun = runs.get(runs.size()-1).fst;
                     // precompute run as deep as possible from previous run
-                    final List<Tuple<Integer,Integer>> curRun = nextPrefixDFS( prevRun );
+                    final Run curRun = nextPrefixDFS( prevRun );
 
                     logger.debug("Starting next run {}", Run.asString(curRun));
 
@@ -317,7 +319,7 @@ public class App {
      * @return the prefix with an increment of the deepest position, i.e. [2/3, 2/2]
      * The call can the extend this run into the unknown.
      */
-    public static List<Tuple<Integer,Integer>> nextPrefixDFS( List<Tuple<Integer,Integer>> run ) throws SearchSpaceExhaustedException {
+    public static Run nextPrefixDFS( Run run ) throws SearchSpaceExhaustedException {
 
         if( run.isEmpty() ) {
             return run;
@@ -339,7 +341,7 @@ public class App {
         }
 
         // collect into mutable list up until before the junction point
-        final List<Tuple<Integer,Integer>> res = run.stream().limit( i ).collect( ArrayList::new, ArrayList::add, ArrayList::addAll );
+        final Run res = run.stream().limit( i ).collect( Run.collect() );
         
         // increase by 1 at junction point
         // append new junction to stable prefix
@@ -351,12 +353,16 @@ public class App {
 
     interface Run extends List<Tuple<Integer,Integer>> {
 
-        static List<Tuple<Integer,Integer>> empty() {
-            return new LinkedList<Tuple<Integer,Integer>>();
+        static class RunArray extends ArrayList<Tuple<Integer,Integer>> implements Run {}
+
+        static Run empty() {
+            return new RunArray();
         }
 
-        static List<Tuple<Integer,Integer>> singleton( int nlocations ) {
-            return Collections.singletonList( new Tuple<>(-1, nlocations ) );
+        static Run singleton( int nlocations ) {
+            final Run res = new RunArray();
+            res.add( new Tuple<>(-1, nlocations ) );
+            return res;
         }
 
         /** Render a run datastructure as a string*/
@@ -365,6 +371,16 @@ public class App {
                 // abbreviate "1/1" to "-"
                 .map( e -> e.snd == 1 ? "-" : String.format("%d/%d", e.fst+1, e.snd) )
                 .collect(Collectors.joining(", ","[","]"));
+        }      
+
+        static Collector<Tuple<Integer,Integer>,Run,Run> collect() {
+            // combiner (3rd argument) needs a wrapper, as opposed to its inlined variant:
+            // final Run res = run.stream().limit( i ).collect( Run.RunArray::new, Run::add, Run::addAll );
+            return Collector.<Tuple<Integer,Integer>,Run>of( RunArray::new, Run::add, (as,bs) -> { as.addAll(bs); return as; } );
+        }
+
+        static Run ofSteps( Tuple<Integer,Integer>... steps ) {
+            return Arrays.stream( steps ).collect( Run.collect() );
         }
     }
 

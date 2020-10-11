@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 
 import wapal.App;
+import wapal.App.Run;
 import wapal.Either;
 import wapal.Tuple;
 import wapal.App.SearchSpaceExhaustedException;
@@ -25,14 +26,14 @@ public class AppTest
     public void testNextDFSPrefix() {
 
         // 2 choices in the 1st position, 1 choice in the 2nd position
-        final List<Tuple<Integer,Integer>> run = Arrays.asList(t(1,3), t(0,2), t(0,1));
+        final Run run = Run.ofSteps(t(1,3), t(0,2), t(0,1));
 
-        final List<Tuple<Integer,Integer>> prefix;
+        final Run prefix;
         try {  prefix = App.nextPrefixDFS( run ); }
         catch( SearchSpaceExhaustedException exn ) {
             throw new AssertionError("Search space is not exhausted in example", exn);
         }
-        final List<Tuple<Integer,Integer>> expected_prefix = Arrays.asList( t(1,3), t(1,2) );
+        final Run expected_prefix = Run.ofSteps( t(1,3), t(1,2) );
 
         assertEquals( expected_prefix, prefix );
     }
@@ -40,7 +41,7 @@ public class AppTest
     @Test
     public void testNextDFSExhaustion() {
 
-        final List<Tuple<Integer,Integer>> run = Arrays.asList(t(2,3), t(0,1), t(1,2));
+        final Run run = Run.ofSteps(t(2,3), t(0,1), t(1,2));
 
         final Exception exn = assertThrows( SearchSpaceExhaustedException.class, () -> {
             App.nextPrefixDFS( run );
