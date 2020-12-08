@@ -39,8 +39,10 @@ jobs:
 
     - run: |
        javac -version
-       ls /usr/lib/jvm
-       sudo apt install openjdk-11-jdk
+    - run: |
+       update-alternatives --list javac
+       update-alternatives --set javac /usr/lib/jvm/adoptopenjdk-11-hotspot-amd64/bin/javac
+    - run: |
        javac -version
     
 
