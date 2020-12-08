@@ -69,7 +69,7 @@ jobs:
     #  uses: github/codeql-action/autobuild@v1
 
     - run: |
-       CODEQL_JAVA_HOME='/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64' /opt/hostedtoolcache/CodeQL/0.0.0-20201106/x64/codeql/java/tools/autobuild.sh
+       JAVA_HOME='/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64' /opt/hostedtoolcache/CodeQL/0.0.0-20201106/x64/codeql/java/tools/autobuild.sh
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 https://git.io/JvXDl
