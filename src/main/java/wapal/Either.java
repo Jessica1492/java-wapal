@@ -32,7 +32,7 @@ public interface Either<A,B> {
         public B getRight() { throw new IllegalStateException("Left has no Right"); }
 
         public <T> Either<T,B> mapLeft( Function<A,T> f ) { return new Left<>(f.apply(a)); }
-        public <T> Either<A,T> mapRight( Function<B,T> f ) { return new Left<>(a); }
+        public <T> Either<A,T> mapRight( Function<B,T> f ) { return (Either<A,T>)this; } // types are equivalent due to type erasure
 
         public boolean equals( Object o ) {
             return o instanceof Either && Objects.equals( ((Either)o).getLeft(), a );
@@ -50,7 +50,7 @@ public interface Either<A,B> {
         public A getLeft() { throw new IllegalStateException("Right has no Left"); }
         public B getRight() { return this.b; }
 
-        public <T> Either<T,B> mapLeft( Function<A,T> f ) { return new Right<>(b); }
+        public <T> Either<T,B> mapLeft( Function<A,T> f ) { return (Either<T,B>)this; } // types are equivalent due to type erasure
         public <T> Either<A,T> mapRight( Function<B,T> f ) { return new Right<>(f.apply(b)); }
 
         public boolean equals( Object o ) {
