@@ -51,7 +51,7 @@ public class AppTest
     @Test
     public void testRunRecovery() {
 
-        final String runAsStr = "[0/3, -, 1/2]";
+        final String runAsStr = "[1/3, -, 2/2]";
         final Either<String,Run> r = App.Run.fromString( runAsStr );
         final Either<String,Run> expected = Either.right( Run.ofSteps( t(0,3), t(0,1), t(1,2) ) );
 

@@ -242,6 +242,11 @@ public class App {
         return res;
     }
 
+    /**
+     * A list of tuples describing "current-choice/total-choices".
+     * The value for "current-choice" starts at offset 0 internally,
+     * but is represented as offset-1 for display through method {@link #asString}.
+     */
     interface Run extends List<Tuple<Integer,Integer>> {
 
         static class RunArray extends ArrayList<Tuple<Integer,Integer>> implements Run {}
@@ -269,8 +274,9 @@ public class App {
             if ( ! str.startsWith("[") ) return Either.left(str);
             if ( ! str.endsWith("]") ) return Either.left(str); 
             final Run run = Arrays.stream( str.substring(1, str.length()-1).split(", *") )
-                // revert the shorthand
+                // expand the shorthand "-" to "1/1"
                 .map( e -> "-".equals(e) ? "1/1" : e )
+                // expect pattern: "current/total"
                 .map( e -> e.split("/") )
                 // subtract 1 from choice offset
                 .map( xy -> new Tuple<>( Integer.parseInt( xy[0] )-1, Integer.parseInt( xy[1] ) ) )
