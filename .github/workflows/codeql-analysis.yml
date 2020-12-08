@@ -43,6 +43,9 @@ jobs:
        update-alternatives --list javac
        sudo update-alternatives --set javac /usr/lib/jvm/adoptopenjdk-12-hotspot-amd64/bin/javac
     - run: |
+       update-alternatives --list java
+       sudo update-alternatives --set java /usr/lib/jvm/adoptopenjdk-12-hotspot-amd64/bin/java
+    - run: |
        javac -version
     
 
