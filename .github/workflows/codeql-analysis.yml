@@ -13,13 +13,13 @@ on:
     branches: [main]
   schedule:
     - cron: '0 20 * * 3'
-  env:
-    - CODEQL_JAVA_HOME: '/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64'
 
 jobs:
   analyze:
     name: Analyze
     runs-on: ubuntu-latest
+    env:
+    - CODEQL_JAVA_HOME: '/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64'
 
     strategy:
       fail-fast: false
