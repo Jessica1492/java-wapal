@@ -47,6 +47,8 @@ jobs:
        sudo update-alternatives --set java /usr/lib/jvm/adoptopenjdk-12-hotspot-amd64/bin/java
     - run: |
        javac -version
+    - run: |
+       cat /opt/hostedtoolcache/CodeQL/0.0.0-20201106/x64/codeql/java/tools/autobuild.sh
     
 
     # Initializes the CodeQL tools for scanning.
