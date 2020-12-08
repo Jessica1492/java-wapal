@@ -19,7 +19,7 @@ jobs:
     name: Analyze
     runs-on: ubuntu-latest
     env:
-      CODEQL_JAVA_HOME: '/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64'
+      JAVA_HOME: '/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64'
 
     strategy:
       fail-fast: false
@@ -39,6 +39,8 @@ jobs:
         fetch-depth: 2
 
 
+    - run: |
+       echo $JAVA_HOME
     - run: |
        javac -version
     - run: |
