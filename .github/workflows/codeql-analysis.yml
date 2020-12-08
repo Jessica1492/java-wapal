@@ -39,7 +39,8 @@ jobs:
 
     - run: |
        javac -version
-       apt install openjdk-11-jdk
+       ls /usr/lib/jvm
+       sudo apt install openjdk-11-jdk
        javac -version
     
 
