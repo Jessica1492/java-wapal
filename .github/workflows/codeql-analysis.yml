@@ -39,6 +39,8 @@ jobs:
 
     - run: |
        javac -version
+       apt intall openjdk-11-jdk
+       javac -version
     
 
     # Initializes the CodeQL tools for scanning.
