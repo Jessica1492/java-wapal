@@ -1,5 +1,7 @@
 package wapal;
 
+import wapal.pages.*;
+
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
@@ -11,7 +13,6 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import static org.openqa.selenium.support.ui.ExpectedConditions.elementToBeClickable;
-import static org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated;
 
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
@@ -70,7 +71,7 @@ public class App {
             try {
                 next_season: while( true ) {
 
-                    // store the score "globally" here, because the season-end page may not show it
+                    // store the score scope-"globally" here, because the season-end page may not show it
                     int score = 0;
 
                     // start a new run
@@ -94,10 +95,10 @@ public class App {
                         }
                     }
 
-                    // get the newest previous run
-                    final Run prevRun = runs.get(runs.size()-1).fst;
-                    // precompute run as deep as possible from previous run
-                    final Run curRun = nextPrefixDFS( prevRun );
+                    // goal: run-with-side-effects until EndOfSeasonPage opens
+
+                    // precompute run as deep as possible from previous runs
+                    final Run curRun = nextPrefixDFS( runs );
 
                     logger.debug("Starting next run {}", Run.asString(curRun));
 
@@ -188,137 +189,20 @@ public class App {
         }
     }
 
-    /** If you encounter the Fence on a run,
-      * the iteration can get stuck after you run out of money.
-      * In this case a restart needs to be signaled.
-      */
-    static class RestartRequiredException extends Exception {
-        public RestartRequiredException( String message ) {
-            super( message );
-        }
-    }
-
     static class SearchSpaceExhaustedException extends Exception {
         public SearchSpaceExhaustedException( String message ) {
             super( message );
         }
     }
 
-    
-    interface Page {
-        boolean isShown( WebDriver driver, WebDriverWait wait );
+    public static Run nextPrefixDFS( List<Tuple<Run,Integer>> runs ) throws SearchSpaceExhaustedException {
 
-        /** May need some filtering, e.g. for Chrono Sands */
-        default List<WebElement> getChoices( WebDriver driver, WebDriverWait wait ) {
-            return driver
-                .findElement(By.id("passages"))
-                .findElements(By.className("macro-link"));
+        // get the newest previous run
+        final Run prevRun = runs.get(runs.size()-1).fst;
 
-        }
-
-        default String listChoices( WebDriver driver, WebDriverWait wait ) {
-            final List<String> choices = this.getChoices( driver, wait )
-                .stream()
-                .map( WebElement::getText )
-                .collect(Collectors.toList());
-            return choices.stream().collect(Collectors.joining("\n- ","- ",""));
-        }
-
-        /**
-         * Choose
-         * @param choice the j-th option in dialogue
-         * @param point_i at choice-point i
-         */
-        default Page selectChoiceAndWait( WebDriver driver, WebDriverWait wait, int point_i, int choice ) throws TimeoutException, RestartRequiredException {
-
-            final List<WebElement> prevChoices = this.getChoices( driver, wait );
-            // remember text to see if anything has changed
-            final String prevChoicesText = listChoices( driver, wait );
-            
-            // perform action
-            final WebElement choiceElement;
-            try { choiceElement = prevChoices.get( choice ); }
-            catch( IndexOutOfBoundsException exn ) {
-                logger.error("Failed trying to choose {} from {}", choice, prevChoicesText );
-                throw exn;
-            }
-            logger.debug("choice {} ({}/{}): {}", point_i, choice+1, prevChoices.size(), choiceElement.getText());
-            choiceElement.click();
-        
-
-            // wait for the next page to open
-            wait.until(presenceOfElementLocated(By.xpath("//*[@id='passages']//*[contains(@class, 'macro-link')]")));
-            // compare new stringified choices with previous stringified choices
-            if ( this.listChoices( driver, wait ).equals( prevChoicesText ) ) {
-                // TODO: make this more useful in case it actually happens
-                throw new RestartRequiredException("Couldn't progress page");
-            }
-
-            // return some handle
-            return new SomePage();
-        }
-
-        // visible on most pages, but not Season-End
-        default int getScore( WebDriverWait wait ) {
-            final String nimpregs = wait.until(presenceOfElementLocated(BY_N_IMPREGNATIONS)).getText();
-            return Integer.parseInt(nimpregs);
-        }
-
-        static final By BY_BUTTON_RESTART = By.xpath("//a[text()='Restart']");
-
-        default void restart( WebDriver driver, WebDriverWait wait ) {
-            final WebElement buttonRestart = driver.findElement(BY_BUTTON_RESTART);
-            
-            /*if ( ! buttonRestart.getText().equals("Restart") ) {
-                logger.error("Restart button not found at xpath");
-                // proceed to click whatever we found anyway
-            }*/
-
-            buttonRestart.click();
-
-            // wait for modal confirmation dialog to open & click it
-            wait.until(presenceOfElementLocated(By.id("restart-ok"))).click();
-        }
+        // TODO: check if run was seen before
+        return nextPrefixDFS( prevRun );
     }
-
-    static class MainPage implements Page {
-
-        // static instance reference, just so we can conform to the Page pattern
-        static final MainPage page = new MainPage();
-        static final By BY_MAIN_TITLE = By.xpath("/html/body/div[5]/div/div/p");
-
-        public boolean isShown( WebDriver driver, WebDriverWait wait ) {
-            try {
-                //logger.debug("Checking for MainPage...");
-                return driver.findElement(BY_MAIN_TITLE).getText().equals("In your mind's eye, fertile wombs glitter like gems all around you. You sense...");
-            } catch( NoSuchElementException exn ) {
-                return false;
-            }
-        }
-
-    }
-
-    static class SomePage implements Page {
-        public boolean isShown( WebDriver driver, WebDriverWait wait ) {
-            return true;
-        }
-    }
-
-    static class EndOfSeasonPage implements Page {
-
-        static final EndOfSeasonPage page = new EndOfSeasonPage();
-        static final By BY_BUTTON_CONTINUE_TO_EPILOGUE = By.xpath("//button[text()='Continue to Epilogue...']");
-
-        public boolean isShown( WebDriver driver, WebDriverWait wait ) {
-           try {
-                //logger.debug("Checking for EndOfSeasonPage...");
-                return driver.findElement(BY_BUTTON_CONTINUE_TO_EPILOGUE).getText().equals("Continue to Epilogue...");
-            } catch( NoSuchElementException exn ) {
-                return false;
-            }    
-        }
-    }
-
 
     /**
      * Given a previous
@@ -416,31 +300,31 @@ public class App {
 
         static List<Tuple<Run,Integer>> recoverRunsFromLog( Path logfile ) {
   
-        try {
-            //return
-            final java.util.stream.Stream<Tuple<Run,Integer>> strm =
-             Files.lines( logfile )
-                 // subject all lines to the matcher
-                 .map( LOG_PATTERN::matcher )
-                 // keep only lines that match the pattern
-                 .filter( Matcher::matches )
-                 // extract score and run description
-                 .map( mtc ->
-                    Run.fromString(mtc.group(2))
-                       .mapRight( run -> new Tuple( run, Integer.parseInt(mtc.group(1)) ) ) )
-                 // log failures to parse
-                 .map( ei -> ei.mapLeft( malformedStr -> { logger.warn("Failed to parse run description %s", malformedStr); return malformedStr;} ) )
-                 // unwrap results for which parsing succeded
-                 .filter( Either::isRight )
-                 .map( Either::getRight )
-            ; return strm
-                // TODO annotate type information to method call instead of storing the intermediate. dont cast!
-                .collect( Collectors.toList() );
-        } catch( IOException exn ) {
-            logger.warn("Failed to recover from log {}", logfile);
-            return new ArrayList<>();
+            try {
+                //return
+                final java.util.stream.Stream<Tuple<Run,Integer>> strm =
+                 Files.lines( logfile )
+                     // subject all lines to the matcher
+                     .map( LOG_PATTERN::matcher )
+                     // keep only lines that match the pattern
+                     .filter( Matcher::matches )
+                     // extract score and run description
+                     .map( mtc ->
+                        Run.fromString(mtc.group(2))
+                           .mapRight( run -> new Tuple( run, Integer.parseInt(mtc.group(1)) ) ) )
+                     // log failures to parse
+                     .map( ei -> ei.mapLeft( malformedStr -> { logger.warn("Failed to parse run description %s", malformedStr); return malformedStr;} ) )
+                     // unwrap results for which parsing succeded
+                     .filter( Either::isRight )
+                     .map( Either::getRight )
+                ; return strm
+                    // TODO annotate type information to method call instead of storing the intermediate. dont cast!
+                    .collect( Collectors.toList() );
+            } catch( IOException exn ) {
+                logger.warn("Failed to recover from log {}", logfile);
+                return new ArrayList<>();
+            }
         }
-    }
 
     }
 
