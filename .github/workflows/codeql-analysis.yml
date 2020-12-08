@@ -67,11 +67,11 @@ jobs:
 
     # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
     # If this step fails, then you should remove it and run the build manually (see below)
-    #- name: Autobuild
-    #  uses: github/codeql-action/autobuild@v1
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v1
 
-    - run: |
-       JAVA_HOME='/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64' /opt/hostedtoolcache/CodeQL/0.0.0-20201106/x64/codeql/java/tools/autobuild.sh
+    #- run: |
+    #   JAVA_HOME='/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64' /opt/hostedtoolcache/CodeQL/0.0.0-20201106/x64/codeql/java/tools/autobuild.sh
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 https://git.io/JvXDl
