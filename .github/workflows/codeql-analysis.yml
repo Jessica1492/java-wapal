@@ -13,6 +13,8 @@ on:
     branches: [main]
   schedule:
     - cron: '0 20 * * 3'
+  env:
+    - CODEQL_JAVA_HOME: '/usr/lib/jvm/adoptopenjdk-12-hotspot-amd64'
 
 jobs:
   analyze:
